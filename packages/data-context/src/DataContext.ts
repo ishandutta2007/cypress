@@ -83,7 +83,7 @@ export interface GraphQLRequestInfo {
 export class DataContext {
   readonly graphqlRequestInfo?: GraphQLRequestInfo
   private _config: Omit<DataContextConfig, 'modeOptions'>
-  private _modeOptions: Readonly<Partial<AllModeOptions>>
+  private _modeOptions: Partial<AllModeOptions>
   private _coreData: CoreDataShape
   readonly lifecycleManager: ProjectLifecycleManager
 
@@ -122,7 +122,7 @@ export class DataContext {
     return new RemoteRequestDataSource()
   }
 
-  get modeOptions () {
+  get modeOptions (): Readonly<Partial<AllModeOptions>> {
     return this._modeOptions
   }
 
@@ -181,7 +181,7 @@ export class DataContext {
   @cached
   get cloud () {
     return new CloudDataSource({
-      fetch: (...args) => this.util.fetch(...args),
+      fetch: (input: RequestInfo | URL, init?: RequestInit) => this.util.fetch(input, init),
       getUser: () => this.coreData.user,
       logout: () => this.actions.auth.logout().catch(this.logTraceError),
       invalidateClientUrqlCache: () => this.graphql.invalidateClientUrqlCache(this),
@@ -351,6 +351,7 @@ export class DataContext {
   }
 
   _reset () {
+    DataContext.#activeRequestCount = 0
     this.actions.servers.setAppSocketServer(undefined)
     this.actions.servers.setGqlSocketServer(undefined)
 
@@ -408,6 +409,7 @@ export class DataContext {
 
   static finishActiveRequest () {
     this.#activeRequestCount--
+
     if (this.#activeRequestCount === 0) {
       this.#awaitingEmptyRequestCount.forEach((fn) => fn())
       this.#awaitingEmptyRequestCount = []
@@ -422,5 +424,9 @@ export class DataContext {
     return new Promise((resolve) => {
       this.#awaitingEmptyRequestCount.push(resolve)
     })
+  }
+
+  updateModeOptionsBrowser (browser: string) {
+    this._modeOptions.browser = browser
   }
 }

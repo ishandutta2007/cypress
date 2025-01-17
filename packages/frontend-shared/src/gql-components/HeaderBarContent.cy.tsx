@@ -53,11 +53,6 @@ describe('<HeaderBarContent />', { viewportWidth: 1000, viewportHeight: 750 }, (
     })
 
     cy.contains('Unsupported browser').should('be.visible')
-
-    /*
-      TODO: fix flaky test https://github.com/cypress-io/cypress/issues/23436
-      cy.percySnapshot('unsupported browser tooltip')
-    */
   })
 
   describe('breadcrumbs', () => {
@@ -357,8 +352,6 @@ describe('<HeaderBarContent />', { viewportWidth: 1000, viewportHeight: 750 }, (
         })
 
         afterEach(() => {
-          // Setting the clock in the beforeEach was causing the cy.checkA11y call in cy.percySnapshot to timeout only in open mode.  Resetting
-          // the clock here prevents that timeout
           cy.clock().invoke('restore')
         })
 

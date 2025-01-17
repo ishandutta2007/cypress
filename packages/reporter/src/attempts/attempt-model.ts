@@ -1,5 +1,5 @@
 import _ from 'lodash'
-import { action, computed, observable } from 'mobx'
+import { action, computed, observable, makeObservable } from 'mobx'
 
 import Agent, { AgentProps } from '../agents/agent-model'
 import Command, { CommandProps } from '../commands/command-model'
@@ -23,8 +23,10 @@ export default class Attempt {
   @observable isActive: boolean | null = null
   @observable routes: Route[] = []
   @observable _state?: TestState | null = null
+  @observable _testOuterStatus?: TestState = undefined
   @observable _invocationCount: number = 0
   @observable invocationDetails?: FileDetails
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   @observable hookCount: { [name in HookName]: number } = {
     'before all': 0,
     'before each': 0,
@@ -45,6 +47,7 @@ export default class Attempt {
   _logs: {[key: string]: Log} = {}
 
   constructor (props: TestProps, test: Test) {
+    makeObservable(this)
     this.testId = props.id
     this.id = props.currentRetry || 0
     this.test = test
@@ -170,6 +173,10 @@ export default class Attempt {
   @action update (props: UpdatableTestProps) {
     if (props.state) {
       this._state = props.state
+    }
+
+    if (props._cypressTestStatusInfo?.outerStatus) {
+      this._testOuterStatus = props._cypressTestStatusInfo.outerStatus
     }
 
     if (props.err) {

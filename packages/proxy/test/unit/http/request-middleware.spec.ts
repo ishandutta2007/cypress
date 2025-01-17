@@ -8,8 +8,24 @@ import { HttpBuffer, HttpBuffers } from '../../../lib/http/util/buffers'
 import { RemoteStates } from '@packages/server/lib/remote_states'
 import { CookieJar } from '@packages/server/lib/util/cookies'
 import { HttpMiddlewareThis } from '../../../lib/http'
+import { DocumentDomainInjection } from '@packages/network'
 
 describe('http/request-middleware', () => {
+  const serverPort = 3030
+  const fileServerPort = 3030
+
+  const remoteStateConfig = () => {
+    return { server: serverPort, fileServer: fileServerPort }
+  }
+
+  let remoteStates: RemoteStates
+  let documentDomainInjection
+
+  beforeEach(() => {
+    documentDomainInjection = DocumentDomainInjection.InjectionBehavior({ injectDocumentDomain: false, testingType: 'e2e' })
+    remoteStates = new RemoteStates(remoteStateConfig, documentDomainInjection)
+  })
+
   it('exports the members in the correct order', () => {
     expect(_.keys(RequestMiddleware)).to.have.ordered.members([
       'LogRequest',
@@ -33,49 +49,66 @@ describe('http/request-middleware', () => {
   describe('ExtractCypressMetadataHeaders', () => {
     const { ExtractCypressMetadataHeaders } = RequestMiddleware
 
-    it('removes x-cypress-is-aut-frame header when it exists, sets in on the req', async () => {
-      const ctx = {
+    function prepareContext (headers = {}) {
+      return {
         getAUTUrl: sinon.stub().returns('http://localhost:8080'),
+        onlyRunMiddleware: sinon.stub(),
         remoteStates: {
           isPrimarySuperDomainOrigin: sinon.stub().returns(false),
         },
         req: {
-          headers: {
-            'x-cypress-is-aut-frame': 'true',
-          },
+          headers,
         } as Partial<CypressIncomingRequest>,
         res: {
           on: (event, listener) => {},
           off: (event, listener) => {},
         },
       }
+    }
 
-      await testMiddleware([ExtractCypressMetadataHeaders], ctx)
-      .then(() => {
-        expect(ctx.req.headers['x-cypress-is-aut-frame']).not.to.exist
-        expect(ctx.req.isAUTFrame).to.be.true
+    context('x-cypress-is-aut-frame', () => {
+      it('when it exists, removes header and sets in on the req', async () => {
+        const ctx = prepareContext({
+          'x-cypress-is-aut-frame': 'true',
+        })
+
+        await testMiddleware([ExtractCypressMetadataHeaders], ctx)
+        .then(() => {
+          expect(ctx.req.headers!['x-cypress-is-aut-frame']).not.to.exist
+          expect(ctx.req.isAUTFrame).to.be.true
+        })
+      })
+
+      it('when it does not exist, sets in on the req', async () => {
+        const ctx = prepareContext()
+
+        await testMiddleware([ExtractCypressMetadataHeaders], ctx).then(() => {
+          expect(ctx.req.headers!['x-cypress-is-aut-frame']).not.to.exist
+          expect(ctx.req.isAUTFrame).to.be.false
+        })
       })
     })
 
-    it('removes x-cypress-is-aut-frame header when it does not exist, sets in on the req', async () => {
-      const ctx = {
-        getAUTUrl: sinon.stub().returns('http://localhost:8080'),
-        remoteStates: {
-          isPrimarySuperDomainOrigin: sinon.stub().returns(false),
-        },
-        req: {
-          headers: {},
-        } as Partial<CypressIncomingRequest>,
-        res: {
-          on: (event, listener) => {},
-          off: (event, listener) => {},
-        },
-      }
+    context('x-cypress-is-from-extra-target', () => {
+      it('when it exists, sets in on the req and only runs necessary middleware', async () => {
+        const ctx = prepareContext({
+          'x-cypress-is-from-extra-target': 'true',
+        })
 
-      await testMiddleware([ExtractCypressMetadataHeaders], ctx)
-      .then(() => {
-        expect(ctx.req.headers['x-cypress-is-aut-frame']).not.to.exist
-        expect(ctx.req.isAUTFrame).to.be.false
+        await testMiddleware([ExtractCypressMetadataHeaders], ctx)
+
+        expect(ctx.req.headers!['x-cypress-is-from-extra-target']).not.to.exist
+        expect(ctx.req.isFromExtraTarget).to.be.true
+        expect(ctx['onlyRunMiddleware']).to.be.calledWith(['MaybeSetBasicAuthHeaders', 'SendRequestOutgoing'])
+      })
+
+      it('when it does not exist, removes header and sets in on the req', async () => {
+        const ctx = prepareContext()
+
+        await testMiddleware([ExtractCypressMetadataHeaders], ctx)
+
+        expect(ctx.req.headers!['x-cypress-is-from-extra-target']).not.to.exist
+        expect(ctx.req.isFromExtraTarget).to.be.false
       })
     })
   })
@@ -598,7 +631,6 @@ describe('http/request-middleware', () => {
 
     it('adds auth header from remote state', async () => {
       const headers = {}
-      const remoteStates = new RemoteStates(() => {})
 
       remoteStates.set('https://www.cypress.io/', { auth: { username: 'u', password: 'p' } })
 
@@ -624,7 +656,6 @@ describe('http/request-middleware', () => {
 
     it('does not add auth header if origins do not match', async () => {
       const headers = {}
-      const remoteStates = new RemoteStates(() => {})
 
       remoteStates.set('https://cypress.io/', { auth: { username: 'u', password: 'p' } }) // does not match due to subdomain
 
@@ -648,7 +679,6 @@ describe('http/request-middleware', () => {
 
     it('does not add auth header if remote does not have auth', async () => {
       const headers = {}
-      const remoteStates = new RemoteStates(() => {})
 
       remoteStates.set('https://www.cypress.io/')
 
@@ -672,7 +702,6 @@ describe('http/request-middleware', () => {
 
     it('does not add auth header if remote not found', async () => {
       const headers = {}
-      const remoteStates = new RemoteStates(() => {})
 
       remoteStates.set('http://localhost:3500', { auth: { username: 'u', password: 'p' } })
 
@@ -698,7 +727,6 @@ describe('http/request-middleware', () => {
       const headers = {
         authorization: 'token',
       }
-      const remoteStates = new RemoteStates(() => {})
 
       remoteStates.set('https://www.cypress.io/', { auth: { username: 'u', password: 'p' } })
 
@@ -721,6 +749,108 @@ describe('http/request-middleware', () => {
     })
   })
 
+  describe('CorrelateBrowserPreRequest', () => {
+    const { CorrelateBrowserPreRequest } = RequestMiddleware
+
+    it('skips if shouldCorrelatePreRequests returns false', async () => {
+      const ctx = {
+        res: {
+          off: sinon.stub(),
+        },
+        shouldCorrelatePreRequests: () => false,
+        getPreRequest: sinon.stub(),
+      }
+
+      await testMiddleware([CorrelateBrowserPreRequest], ctx)
+      .then(() => {
+        expect(ctx.getPreRequest).not.to.be.called
+      })
+    })
+
+    it('sets browserPreRequest on the request', async () => {
+      const browserPreRequest = sinon.stub()
+
+      const ctx = {
+        req: {
+          proxiedUrl: 'https://www.cypress.io/',
+          browserPreRequest: undefined,
+          headers: [],
+        },
+        res: {
+          off: sinon.stub(),
+          once: sinon.stub(),
+        },
+        shouldCorrelatePreRequests: () => true,
+        getPreRequest: sinon.stub().yields({
+          browserPreRequest,
+        }),
+      }
+
+      await testMiddleware([CorrelateBrowserPreRequest], ctx)
+      .then(() => {
+        expect(ctx.getPreRequest).to.be.calledOnce
+        expect(ctx.req.browserPreRequest).to.equal(browserPreRequest)
+        expect(ctx.res.once).to.be.calledWith('close')
+        expect(ctx.res.off).to.be.calledWith('close')
+      })
+    })
+
+    it('sets noPreRequestExpected on the request', async () => {
+      const ctx = {
+        req: {
+          proxiedUrl: 'https://www.cypress.io/',
+          browserPreRequest: undefined,
+          noPreRequestExpected: undefined,
+          headers: [],
+        },
+        res: {
+          off: sinon.stub(),
+          once: sinon.stub(),
+        },
+        shouldCorrelatePreRequests: () => true,
+        getPreRequest: sinon.stub().yields({
+          noPreRequestExpected: true,
+        }),
+      }
+
+      await testMiddleware([CorrelateBrowserPreRequest], ctx)
+      .then(() => {
+        expect(ctx.getPreRequest).to.be.calledOnce
+        expect(ctx.req.noPreRequestExpected).to.be.true
+        expect(ctx.res.once).to.be.calledWith('close')
+        expect(ctx.res.off).to.be.calledWith('close')
+      })
+    })
+
+    it('errors when the request is destroyed prior to receiving a pre-request', () => {
+      const ctx = {
+        req: {
+          proxiedUrl: 'https://www.cypress.io/',
+          destroyed: true,
+          browserPreRequest: undefined,
+          noPreRequestExpected: undefined,
+          headers: [],
+        },
+        res: {
+          off: sinon.stub(),
+          once: sinon.stub(),
+        },
+        shouldCorrelatePreRequests: () => true,
+        getPreRequest: sinon.stub(),
+        onError: sinon.stub(),
+      }
+
+      testMiddleware([CorrelateBrowserPreRequest], ctx)
+      ctx.res.once.callArg(1)
+
+      expect(ctx.getPreRequest).to.be.calledOnce
+      expect(ctx.req.noPreRequestExpected).to.be.undefined
+      expect(ctx.req.browserPreRequest).to.be.undefined
+      expect(ctx.res.once).to.be.calledWith('close')
+      expect(ctx.onError).to.be.calledOnce
+    })
+  })
+
   describe('SendRequestOutgoing', () => {
     const { SendRequestOutgoing } = RequestMiddleware
 
@@ -728,7 +858,6 @@ describe('http/request-middleware', () => {
 
     beforeEach(() => {
       const headers = {}
-      const remoteStates = new RemoteStates(() => {})
 
       ctx = {
         onError: sinon.stub(),

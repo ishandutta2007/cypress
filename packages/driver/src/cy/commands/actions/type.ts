@@ -46,7 +46,9 @@ export default function (Commands, Cypress, cy, state, config) {
       animationDistanceThreshold: config('animationDistanceThreshold'),
     })
 
-    if (options.log) {
+    // if this instance is not present, create a log instance for cy.type()
+    // cy.clear passes in their log instance
+    if (!options._log) {
       // figure out the options which actually change the behavior of clicks
       const deltaOptions = $utils.filterOutOptions(options)
 
@@ -94,6 +96,7 @@ export default function (Commands, Cypress, cy, state, config) {
       options._log = Cypress.log({
         message: [chars, deltaOptions],
         $el: options.$el,
+        hidden: options.log === false,
         timeout: options.timeout,
         consoleProps () {
           return {
@@ -114,7 +117,7 @@ export default function (Commands, Cypress, cy, state, config) {
         },
       })
 
-      options._log!.snapshot('before', { next: 'after' })
+      options._log?.snapshot('before', { next: 'after' })
     }
 
     if (options.$el.length > 1) {
@@ -189,6 +192,7 @@ export default function (Commands, Cypress, cy, state, config) {
       const isFirefoxBefore91 = Cypress.isBrowser('firefox') && Cypress.browserMajorVersion() < 91
       const isFirefoxBefore98 = Cypress.isBrowser('firefox') && Cypress.browserMajorVersion() < 98
       const isFirefox106OrLater = Cypress.isBrowser('firefox') && Cypress.browserMajorVersion() >= 106
+      const isFirefox129OrLater = Cypress.isBrowser('firefox') && Cypress.browserMajorVersion() >= 129
 
       const simulateSubmitHandler = function () {
         const form = options.$el.parents('form')
@@ -382,9 +386,9 @@ export default function (Commands, Cypress, cy, state, config) {
 
             keydownEvents = []
 
-            // After Firefox 98,
+            // After Firefox 98 and before 129
             // Firefox doesn't update checkbox automatically even if the click event is sent.
-            if (Cypress.isBrowser('firefox')) {
+            if (Cypress.isBrowser('firefox') && !isFirefox129OrLater) {
               if (event.target.type === 'checkbox') {
                 event.target.checked = !event.target.checked
               } else if (event.target.type === 'radio') { // when checked is false, here cannot be reached because of the above condition
@@ -614,23 +618,22 @@ export default function (Commands, Cypress, cy, state, config) {
     const clear = function (el) {
       const $el = $dom.wrap(el)
 
-      if (options.log) {
-        // figure out the options which actually change the behavior of clicks
-        const deltaOptions = $utils.filterOutOptions(options)
+      // figure out the options which actually change the behavior of clicks
+      const deltaOptions = $utils.filterOutOptions(options)
 
-        options._log = Cypress.log({
-          message: deltaOptions,
-          $el,
-          timeout: options.timeout,
-          consoleProps () {
-            return {
-              'Applied To': $dom.getElements($el),
-              'Elements': $el.length,
-              'Options': deltaOptions,
-            }
-          },
-        })
-      }
+      options._log = Cypress.log({
+        message: deltaOptions,
+        $el,
+        hidden: options.log === false,
+        timeout: options.timeout,
+        consoleProps () {
+          return {
+            'Applied To': $dom.getElements($el),
+            'Elements': $el.length,
+            'Options': deltaOptions,
+          }
+        },
+      })
 
       const callTypeCmd = ($el) => {
         return cy.now('type', $el, '{selectall}{del}', {

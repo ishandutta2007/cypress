@@ -3,6 +3,7 @@ import $errUtils from '../../../cypress/error_utils'
 import { difference, isPlainObject, isString } from 'lodash'
 import type { LocationObject } from '../../../cypress/location'
 import * as cors from '@packages/network/lib/cors'
+import { DocumentDomainInjection } from '@packages/network/lib/document-domain-injection'
 
 const validOptionKeys = Object.freeze(['args'])
 
@@ -84,16 +85,11 @@ export class Validator {
       })
     }
 
-    // Users would be better off not using cy.origin if the origin is part of the same super domain.
-    if (cors.urlMatchesPolicyBasedOnDomain(originLocation.href, specHref, {
-      skipDomainInjectionForDomains: Cypress.config('experimentalSkipDomainInjection'),
-    })) {
-      // this._isSameSuperDomainOriginWithExceptions({ originLocation, specLocation })) {
+    const injector = DocumentDomainInjection.InjectionBehavior(Cypress.config())
 
-      const policy = cors.policyForDomain(originLocation.href, {
-        skipDomainInjectionForDomains: Cypress.config('experimentalSkipDomainInjection'),
-      })
+    const policy = cors.policyFromConfig({ injectDocumentDomain: Cypress.config('injectDocumentDomain') })
 
+    if (injector.urlsMatch(originLocation.href, specHref)) {
       $errUtils.throwErrByPath('origin.invalid_url_argument_same_origin', {
         onFail: this.log,
         args: {

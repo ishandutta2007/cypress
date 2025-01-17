@@ -1,6 +1,7 @@
 import { getMobxRunnerStore, MobxRunnerStore, useSpecStore } from '../store'
 import { getReporterElement } from './utils'
-import { getEventManager, getRunnerConfigFromWindow } from '.'
+import { getEventManager } from '.'
+import { getRunnerConfigFromWindow } from './get-runner-config-from-window'
 import type { EventManager } from './event-manager'
 import { useRunnerUiStore } from '../store/runner-ui-store'
 
@@ -8,12 +9,6 @@ let hasInitializeReporter = false
 
 export function setInitializedReporter (val: boolean) {
   hasInitializeReporter = val
-}
-
-async function unmountReporter () {
-  // We do not need to unmount the reporter at any point right now,
-  // but this will likely be useful for cleaning up at some point.
-  window.UnifiedRunner.ReactDOM.unmountComponentAtNode(getReporterElement())
 }
 
 async function resetReporter () {
@@ -55,11 +50,12 @@ function renderReporter (
     testFilter: specsStore.testFilter,
   })
 
-  window.UnifiedRunner.ReactDOM.render(reporter, root)
+  const reactDomRoot = window.UnifiedRunner.ReactDOM.createRoot(root)
+
+  reactDomRoot.render(reporter)
 }
 
 export const UnifiedReporterAPI = {
-  unmountReporter,
   setupReporter,
   hasInitializeReporter,
   resetReporter,

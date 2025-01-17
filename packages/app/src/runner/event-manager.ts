@@ -16,6 +16,7 @@ import { handlePausing } from './events/pausing'
 import { addTelemetryListeners } from './events/telemetry'
 import { telemetry } from '@packages/telemetry/src/browser'
 import { addCaptureProtocolListeners } from './events/capture-protocol'
+import { getRunnerConfigFromWindow } from './get-runner-config-from-window'
 
 export type CypressInCypressMochaEvent = Array<Array<string | Record<string, any>>>
 
@@ -32,6 +33,7 @@ let crossOriginOnMessageRef = ({ data, source }: MessageEvent<{
   return undefined
 }
 let crossOriginLogs: {[key: string]: Cypress.Log} = {}
+let hasMochaRunEnded: boolean = false
 
 interface AddGlobalListenerOptions {
   element: AutomationElementId
@@ -39,10 +41,10 @@ interface AddGlobalListenerOptions {
 }
 
 const driverToLocalAndReporterEvents = 'run:start run:end'.split(' ')
-const driverToSocketEvents = 'backend:request automation:request mocha recorder:frame'.split(' ')
+const driverToSocketEvents = 'backend:request automation:request mocha recorder:frame dev-server:on-spec-update'.split(' ')
 const driverToLocalEvents = 'viewport:changed config stop url:changed page:loading visit:failed visit:blank cypress:in:cypress:runner:event'.split(' ')
 const socketRerunEvents = 'runner:restart watched:file:changed'.split(' ')
-const socketToDriverEvents = 'net:stubbing:event request:event script:error cross:origin:cookies'.split(' ')
+const socketToDriverEvents = 'net:stubbing:event request:event script:error cross:origin:cookies dev-server:on-spec-updated'.split(' ')
 const localToReporterEvents = 'reporter:log:add reporter:log:state:changed reporter:log:remove'.split(' ')
 
 /**
@@ -146,6 +148,9 @@ export class EventManager {
           break
         case 'complete:download':
           Cypress.downloads.end(data)
+          break
+        case 'canceled:download':
+          Cypress.downloads.end(data, true)
           break
         default:
           break
@@ -340,7 +345,12 @@ export class EventManager {
     // when we actually unload then
     // nuke all of the cookies again
     // so we clear out unload
-    $window.on('unload', () => {
+    // While we must move to pagehide for Chromium, it does not work for our
+    // needs in Firefox. Until that is addressed, only Chromium uses the pagehide
+    // event as a proxy for AUT unloads.
+    const unloadEvent = this.isBrowserFamily('chromium') ? 'pagehide' : 'unload'
+
+    $window.on(unloadEvent, (e) => {
       this._clearAllCookies()
     })
 
@@ -391,10 +401,8 @@ export class EventManager {
     this._addListeners()
   }
 
-  isBrowser (browserName) {
-    if (!this.Cypress) return false
-
-    return this.Cypress.isBrowser(browserName)
+  isBrowserFamily (family: string) {
+    return getRunnerConfigFromWindow()?.browser?.family === family
   }
 
   initialize ($autIframe: JQuery<HTMLIFrameElement>, config: Record<string, any>) {
@@ -564,12 +572,14 @@ export class EventManager {
     })
 
     Cypress.on('run:start', async () => {
+      hasMochaRunEnded = false
       if (Cypress.config('experimentalMemoryManagement') && Cypress.isBrowser({ family: 'chromium' })) {
         await Cypress.backend('start:memory:profiling', Cypress.config('spec'))
       }
     })
 
     Cypress.on('run:end', async () => {
+      hasMochaRunEnded = true
       if (Cypress.config('experimentalMemoryManagement') && Cypress.isBrowser({ family: 'chromium' })) {
         await Cypress.backend('end:memory:profiling')
       }
@@ -581,6 +591,12 @@ export class EventManager {
         // is emitted from cypress/driver when running e2e tests using
         // "cypress in cypress"
         if (event === 'cypress:in:cypress:runner:event') {
+          // TODO: we sometimes receive multiple mocha:start events
+          // which causes the the mochaEvent snapshots to fail. We should investigate further.
+          if (args[0] === 'mocha' && args[1] === 'start') {
+            this.cypressInCypressMochaEvents = []
+          }
+
           this.cypressInCypressMochaEvents.push(args as CypressInCypressMochaEvent[])
 
           if (args[0] === 'mocha' && args[1] === 'end') {
@@ -605,6 +621,7 @@ export class EventManager {
     })
 
     Cypress.on('test:before:run:async', async (...args) => {
+      crossOriginLogs = {}
       const [attributes, test] = args
 
       this.reporterBus.emit('test:before:run:async', attributes)
@@ -650,35 +667,6 @@ export class EventManager {
       Cypress.primaryOriginCommunicator.toSpecBridge(origin, responseEvent, cy.state('duringUserTestExecution'))
     })
 
-    Cypress.on('request:snapshot:from:spec:bridge', ({ log, name, options, specBridge, addSnapshot }: {
-      log: Cypress.Log
-      name?: string
-      options?: any
-      specBridge: string
-      addSnapshot: (snapshot: any, options: any, shouldRebindSnapshotFn: boolean) => Cypress.Log
-    }) => {
-      const eventID = log.get('id')
-
-      const requestSnapshot = () => {
-        return Cypress.primaryOriginCommunicator.toSpecBridgePromise({
-          origin: specBridge,
-          event: 'snapshot:generate:for:log',
-          data: {
-            name,
-            id: eventID,
-          },
-        }).then((crossOriginSnapshot) => {
-          const snapshot = crossOriginSnapshot.body ? crossOriginSnapshot : null
-
-          addSnapshot.apply(log, [snapshot, options, false])
-        })
-      }
-
-      requestSnapshot().catch(() => {
-        // If a spec bridge isn't present to respond this isn't an error and there is nothing to do.
-      })
-    })
-
     Cypress.primaryOriginCommunicator.on('before:unload', (origin) => {
       // In webkit the before:unload event could come in after the on load event has already happened.
       // To prevent hanging we will only set the state to unstable if we are currently on the same origin as the unload event,
@@ -720,8 +708,8 @@ export class EventManager {
     Cypress.primaryOriginCommunicator.on('after:screenshot', handleAfterScreenshot)
 
     Cypress.primaryOriginCommunicator.on('log:added', (attrs) => {
-      // If the test is over and the user enters interactive snapshot mode, do not add cross origin logs to the test runner.
-      if (Cypress.state('test')?.final) return
+      // If the mocha run is over and the user enters interactive snapshot mode, do not add cross origin logs to the test runner.
+      if (hasMochaRunEnded) return
 
       // Create a new local log representation of the cross origin log.
       // It will be attached to the current command.
@@ -848,7 +836,6 @@ export class EventManager {
     Cypress.primaryOriginCommunicator.removeAllListeners()
     // clean up the cross origin logs in memory to prevent dangling references as the log objects themselves at this point will no longer be needed.
     crossOriginLogs = {}
-
     this.studioStore.setInactive()
   }
 

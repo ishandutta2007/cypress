@@ -32,6 +32,7 @@ import { create as createOverrides, IOverrides } from '../cy/overrides'
 import { historyNavigationTriggeredHashChange } from '../cy/navigation'
 import { EventEmitter2 } from 'eventemitter2'
 import { handleCrossOriginCookies } from '../cross-origin/events/cookies'
+import { trackTopUrl } from '../util/trackTopUrl'
 
 import type { ICypress } from '../cypress'
 import type { ICookies } from './cookies'
@@ -338,6 +339,15 @@ export class $Cy extends EventEmitter2 implements ITimeouts, IStability, IAssert
       this.enqueue($Command.create(attrs))
     })
 
+    // clears out any extra tabs/windows between tests
+    Cypress.on('test:before:run:async', () => {
+      return Cypress.backend('close:extra:targets')
+    })
+
+    if (!Cypress.isCrossOriginSpecBridge) {
+      trackTopUrl()
+    }
+
     handleCrossOriginCookies(Cypress)
   }
 
@@ -378,9 +388,11 @@ export class $Cy extends EventEmitter2 implements ITimeouts, IStability, IAssert
 
     err.stack = $stackUtils.normalizedStack(err)
 
+    const userInvocationStack = $errUtils.getUserInvocationStack(err, this.state)
+
     err = $errUtils.enhanceStack({
       err,
-      userInvocationStack: $errUtils.getUserInvocationStack(err, this.state),
+      userInvocationStack,
       projectRoot: this.config('projectRoot'),
     })
 
@@ -1115,7 +1127,10 @@ export class $Cy extends EventEmitter2 implements ITimeouts, IStability, IAssert
         // doesn't trigger a confirmation dialog
         return undefined
       },
-      onUnload (e) {
+      onPageHide (e) {
+        // unload is being actively deprecated/removed by chrome, so for
+        // compatibility, we are using `window`'s `pagehide` event as a proxy
+        // for the `window:unload` event that we emit. See: https://github.com/cypress-io/cypress/pull/29525
         return cy.Cypress.action('app:window:unload', e)
       },
       onNavigation (...args) {

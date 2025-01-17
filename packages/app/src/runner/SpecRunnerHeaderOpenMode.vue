@@ -25,12 +25,12 @@
         </Button>
         <input
           ref="autUrlInputRef"
-          target="_blank"
           :value="studioStore.needsUrl ? urlInProgress : autUrl"
           data-cy="aut-url-input"
+          aria-label="url of the application under test"
           class="flex grow mr-[12px] leading-normal max-w-full text-indigo-500 z-51 self-center hocus-link-default truncate"
           @input="setStudioUrl"
-          @click="openInNewTab"
+          @click="openExternally"
           @keyup.enter="visitUrl"
         >
         <StudioUrlPrompt
@@ -63,11 +63,11 @@
         :disabled="autStore.isRunning"
       >
         <template #heading>
-          <img
+          <component
+            :is="allBrowsersIcons[selectedBrowser.displayName?.toLowerCase()] || allBrowsersIcons.generic"
             class="min-w-[16px] w-[16px]"
-            :src="allBrowsersIcons[selectedBrowser.displayName] || allBrowsersIcons.generic"
             :alt="selectedBrowser.displayName"
-          >
+          />
           {{ selectedBrowser.displayName }} {{ selectedBrowser.majorVersion }}
         </template>
 
@@ -186,6 +186,7 @@ import SpecRunnerDropdown from './SpecRunnerDropdown.vue'
 import { allBrowsersIcons } from '@packages/frontend-shared/src/assets/browserLogos'
 import BookIcon from '~icons/cy/book_x16'
 import { useStudioStore } from '../store/studio-store'
+import { useExternalLink } from '@cy/gql-components/useExternalLink'
 
 gql`
 fragment SpecRunnerHeader on CurrentProject {
@@ -255,6 +256,8 @@ const activeSpecPath = specStore.activeSpec?.absolute
 
 const isDisabled = computed(() => autStore.isRunning || autStore.isLoading)
 
+const openExternal = useExternalLink()
+
 function setStudioUrl (event: Event) {
   const url = (event.currentTarget as HTMLInputElement).value
 
@@ -265,11 +268,11 @@ function visitUrl () {
   studioStore.visitUrl(urlInProgress.value)
 }
 
-function openInNewTab () {
+function openExternally () {
   if (!autStore.url || studioStore.isActive) {
     return
   }
 
-  window.open(autStore.url, '_blank')?.focus()
+  openExternal(autStore.url)
 }
 </script>

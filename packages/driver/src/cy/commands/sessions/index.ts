@@ -33,7 +33,7 @@ export default function (Commands, Cypress, cy) {
     })
 
     Cypress.on('test:before:after:run:async', (test, Cypress, { nextTestHasTestIsolationOn }: {nextTestHasTestIsolationOn?: boolean} = {}) => {
-      if (nextTestHasTestIsolationOn) {
+      if (nextTestHasTestIsolationOn || nextTestHasTestIsolationOn === undefined) {
         return navigateAboutBlank({ inBetweenTestsAndNextTestHasTestIsolationOn: true })
       }
 
@@ -252,9 +252,11 @@ export default function (Commands, Cypress, cy) {
                 err = new Error(err)
               }
 
+              const userInvocationStack = $errUtils.getUserInvocationStack(err, Cypress.state)
+
               err = $errUtils.enhanceStack({
                 err,
-                userInvocationStack: $errUtils.getUserInvocationStack(err, Cypress.state),
+                userInvocationStack,
                 projectRoot: Cypress.config('projectRoot'),
               })
 

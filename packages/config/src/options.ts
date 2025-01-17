@@ -170,6 +170,10 @@ const driverConfigOptions: Array<DriverConfigOption> = [
     },
     validation: isValidConfig,
   }, {
+    name: 'defaultBrowser',
+    defaultValue: null,
+    validation: validate.isString,
+  }, {
     name: 'defaultCommandTimeout',
     defaultValue: 4000,
     validation: validate.isNumber,
@@ -204,11 +208,6 @@ const driverConfigOptions: Array<DriverConfigOption> = [
     overrideLevel: 'never',
     requireRestartOnChange: 'server',
   }, {
-    name: 'experimentalFetchPolyfill',
-    defaultValue: false,
-    validation: validate.isBoolean,
-    isExperimental: true,
-  }, {
     name: 'experimentalInteractiveRunEvents',
     defaultValue: false,
     validation: validate.isBoolean,
@@ -231,10 +230,9 @@ const driverConfigOptions: Array<DriverConfigOption> = [
     isExperimental: true,
     requireRestartOnChange: 'server',
   }, {
-    name: 'experimentalSkipDomainInjection',
-    defaultValue: null,
-    validation: validate.isNullOrArrayOfStrings,
-    isExperimental: true,
+    name: 'injectDocumentDomain',
+    defaultValue: false,
+    validation: validate.isBoolean,
     requireRestartOnChange: 'server',
   }, {
     name: 'experimentalOriginDependencies',
@@ -289,6 +287,11 @@ const driverConfigOptions: Array<DriverConfigOption> = [
     defaultValue: false,
     validation: validate.isBoolean,
     overrideLevel: 'any',
+  }, {
+    name: 'justInTimeCompile',
+    defaultValue: true,
+    validation: validate.isBoolean,
+    requireRestartOnChange: 'server',
   }, {
     name: 'keystrokeDelay',
     defaultValue: 0,
@@ -355,10 +358,32 @@ const driverConfigOptions: Array<DriverConfigOption> = [
     validation: validate.isNumber,
     overrideLevel: 'any',
   }, {
+    /**
+     * if experimentalStrategy is `detect-flake-and-pass-on-threshold`
+     * an no experimentalOptions are configured, the following configuration
+     * should be implicitly used:
+     * experimentalStrategy: 'detect-flake-and-pass-on-threshold',
+     * experimentalOptions: {
+     *   maxRetries: 2,
+     *   passesRequired: 2
+     * }
+     *
+     * if experimentalStrategy is `detect-flake-but-always-fail`
+     * an no experimentalOptions are configured, the following configuration
+     * should be implicitly used:
+     * experimentalStrategy: 'detect-flake-but-always-fail',
+     * experimentalOptions: {
+     *   maxRetries: 2,
+     *   stopIfAnyPassed: false
+     * }
+     */
     name: 'retries',
     defaultValue: {
       runMode: 0,
       openMode: 0,
+      // these values MUST be populated in order to display the experiment correctly inside the project settings in open mode
+      experimentalStrategy: undefined,
+      experimentalOptions: undefined,
     },
     validation: validate.isValidRetriesConfig,
     overrideLevel: 'any',
@@ -588,7 +613,7 @@ export const options: Array<DriverConfigOption | RuntimeConfigOption> = [
 ]
 
 /**
- * Values not allowed in 10.X+ in the root, e2e and component config
+ * Values not allowed in 10.X+ in the root, e2e or component config
  */
 export const breakingOptions: Readonly<BreakingOption[]> = [
   {
@@ -609,6 +634,11 @@ export const breakingOptions: Readonly<BreakingOption[]> = [
     errorKey: 'EXPERIMENTAL_SAMESITE_REMOVED',
     isWarning: true,
   }, {
+    name: 'experimentalJustInTimeCompile',
+    errorKey: 'EXPERIMENTAL_JIT_COMPILE_REMOVED',
+    isWarning: true,
+  },
+  {
     name: 'experimentalNetworkStubbing',
     errorKey: 'EXPERIMENTAL_NETWORK_STUBBING_REMOVED',
     isWarning: true,
@@ -628,6 +658,10 @@ export const breakingOptions: Readonly<BreakingOption[]> = [
     name: 'experimentalShadowDomSupport',
     errorKey: 'EXPERIMENTAL_SHADOW_DOM_REMOVED',
     isWarning: true,
+  }, {
+    name: 'experimentalSkipDomainInjection',
+    errorKey: 'EXPERIMENTAL_SKIP_DOMAIN_INJECTION_REMOVED',
+    isWarning: false,
   }, {
     name: 'firefoxGcInterval',
     errorKey: 'FIREFOX_GC_INTERVAL_REMOVED',
@@ -707,10 +741,10 @@ export const breakingRootOptions: Array<BreakingOption> = [
     testingTypes: ['e2e'],
   },
   {
-    name: 'experimentalSkipDomainInjection',
-    errorKey: 'EXPERIMENTAL_USE_DEFAULT_DOCUMENT_DOMAIN_E2E_ONLY',
+    name: 'justInTimeCompile',
+    errorKey: 'JIT_COMPONENT_TESTING',
     isWarning: false,
-    testingTypes: ['e2e'],
+    testingTypes: ['component'],
   },
 ]
 
@@ -725,6 +759,16 @@ export const testingTypeBreakingOptions: { e2e: Array<BreakingOption>, component
       name: 'indexHtmlFile',
       errorKey: 'CONFIG_FILE_INVALID_TESTING_TYPE_CONFIG_E2E',
       isWarning: false,
+    },
+    {
+      name: 'justInTimeCompile',
+      errorKey: 'JIT_COMPONENT_TESTING',
+      isWarning: false,
+    },
+    {
+      name: 'injectDocumentDomain',
+      errorKey: 'INJECT_DOCUMENT_DOMAIN_DEPRECATION',
+      isWarning: true,
     },
   ],
   component: [
@@ -754,8 +798,8 @@ export const testingTypeBreakingOptions: { e2e: Array<BreakingOption>, component
       isWarning: false,
     },
     {
-      name: 'experimentalSkipDomainInjection',
-      errorKey: 'EXPERIMENTAL_USE_DEFAULT_DOCUMENT_DOMAIN_E2E_ONLY',
+      name: 'injectDocumentDomain',
+      errorKey: 'INJECT_DOCUMENT_DOMAIN_E2E_ONLY',
       isWarning: false,
     },
   ],

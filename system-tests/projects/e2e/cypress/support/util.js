@@ -24,10 +24,12 @@ export const verify = (title, ctx, options) => {
     column,
     message,
     stack,
+    isCyOrigin,
+    isPreprocessorWithTypescript,
   } = options
 
-  const codeFrameFileRegex = new RegExp(`${Cypress.spec.relative}:${line}:${column}`)
-  const stackFileRegex = new RegExp(`${Cypress.spec.relative}:${line}:${column - 1}`)
+  const codeFrameFileRegex = new RegExp(`${Cypress.spec.relative}:${line}${column ? `:${column}` : ''}`)
+  const stackFileRegex = new RegExp(`${Cypress.spec.relative}:${line}${column ? `:${column - 1}` : ''}`)
 
   it(`✓ VERIFY - ${title}`, function () {
     if (before) before()
@@ -67,7 +69,13 @@ export const verify = (title, ctx, options) => {
       .should('match', codeFrameFileRegex)
 
       // code frames will show this as the 1st line
-      cy.get('.test-err-code-frame pre span').should('include.text', `fail('${title}',this,()=>`)
+      if (isCyOrigin) {
+        cy.get('.test-err-code-frame pre span').should('include.text', `('${title}',,function()`)
+      } else if (isPreprocessorWithTypescript) {
+        cy.get('.test-err-code-frame pre span').should('include.text', `'${title}',this,function(){`)
+      } else {
+        cy.get('.test-err-code-frame pre span').should('include.text', `fail('${title}',this,()=>`)
+      }
 
       cy.contains('.test-err-code-frame .runnable-err-file-path', openInIdePath.relative)
     })

@@ -192,7 +192,7 @@ export class ProjectConfigManager {
     const bundler = WIZARD_BUNDLERS.find((x) => x.type === devServerOptions.bundler)
 
     // Use a map since sometimes the same dependency can appear in `bundler` and `framework`,
-    // for example webpack appears in both `bundler: 'webpack', framework: 'react-scripts'`
+    // for example webpack appears in both `bundler: 'webpack', framework: 'next.js'`
     const unsupportedDeps = new Map<Cypress.DependencyToInstall['dependency']['type'], Cypress.DependencyToInstall>()
 
     if (!bundler) {
@@ -363,6 +363,7 @@ export class ProjectConfigManager {
 
       this._eventsIpc = new ProjectConfigIpc(
         this.options.ctx.coreData.app.nodePath,
+        this.options.ctx.coreData.app.nodeVersion,
         this.options.projectRoot,
         this.configFilePath,
         this.options.configFile,
